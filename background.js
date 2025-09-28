@@ -1,4 +1,4 @@
-import { db } from "./firebase-config.js";  // Import Firestore
+import { db } from "./firebase-config.js";
 import { collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
 
 class SessionManager {
@@ -10,7 +10,7 @@ class SessionManager {
 
   async init() {
     await this.loadSessions();
-    this.firebaseInitialized = true;  // Firebase already imported
+    this.firebaseInitialized = true;
     this.setupMessageListeners();
     console.log('SessionSync: Background script initialized');
   }
@@ -48,6 +48,8 @@ class SessionManager {
       } else if (message.type === 'REMOTE_LOGOUT') {
         this.handleRemoteLogout(message);
       }
+
+      return true; // Required for async sendResponse
     });
   }
 
@@ -85,7 +87,6 @@ class SessionManager {
 
   async syncWithFirebase(session) {
     if (!this.firebaseInitialized) return;
-
     try {
       await addDoc(collection(db, "sessions"), {
         ...session,
@@ -105,13 +106,8 @@ class SessionManager {
   updateBadge() {
     const activeSessions = Array.from(this.sessions.values()).filter(s => s.active);
     const count = activeSessions.length;
-
     chrome.action.setBadgeText({ text: count > 0 ? count.toString() : '' });
     chrome.action.setBadgeBackgroundColor({ color: count > 0 ? '#4CAF50' : '#F44336' });
-  }
-
-  getSessions() {
-    return Array.from(this.sessions.values());
   }
 }
 
