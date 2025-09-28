@@ -10,7 +10,7 @@ class SessionManager {
 
   async init() {
     await this.loadSessions();
-    this.firebaseInitialized = true;
+    await this.initializeFirebase();
     this.setupMessageListeners();
     console.log('SessionSync: Background script initialized');
   }
@@ -35,6 +35,19 @@ class SessionManager {
     }
   }
 
+  async initializeFirebase() {
+    try {
+      this.firebaseInitialized = true;
+      this.setupFirebaseListeners();
+    } catch (error) {
+      console.error('SessionSync: Firebase initialization failed:', error);
+    }
+  }
+
+  setupFirebaseListeners() {
+    console.log('SessionSync: Firebase listeners would be set up here');
+  }
+
   setupMessageListeners() {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       console.log("SessionSync: Message received in background", message);
@@ -54,25 +67,31 @@ class SessionManager {
   }
 
   async handleLogin(message, tab) {
-    const { hostname, url, email, timestamp } = message;
-    const session = {
-      site: hostname,
-      email: email || 'unknown',
-      active: true,
-      lastLogin: timestamp,
-      lastLogout: null,
-      device: await this.getDeviceInfo(),
-      tabId: tab?.id || null,
-      url: url
-    };
-
-    this.sessions.set(hostname, session);
-    await this.saveSessions();
-    this.syncWithFirebase(session);
+    console.log("SessionSync: Handling LOGIN", message);
+    const { hostname, url, email, timestamp, eventId } = message;
+    if (!this.sessions.has(hostname) || (message.email !== null && message.email !== 'unknown@example.com')) {
+      const session = {
+        site: hostname,
+        email: email || 'unknown@example.com', // Only fallback if email is null
+        active: true,
+        lastLogin: timestamp,
+        lastLogout: null,
+        device: await this.getDeviceInfo(),
+        tabId: tab?.id || null,
+        url: url
+      };
+      this.sessions.set(hostname, session);
+      await this.saveSessions();
+      this.syncWithFirebase(session);
+      console.log(`SessionSync: Login recorded for ${hostname} (Event ID: ${eventId}) with email: ${email}`);
+    } else {
+      console.log(`SessionSync: Skipping update for ${hostname} (Event ID: ${eventId}) due to existing session or no new email`);
+    }
     this.updateBadge();
   }
 
   async handleLogout(message, tab) {
+    console.log("SessionSync: Handling LOGOUT", message);
     const { hostname, timestamp } = message;
     if (this.sessions.has(hostname)) {
       const session = this.sessions.get(hostname);
@@ -82,6 +101,48 @@ class SessionManager {
       await this.saveSessions();
       this.syncWithFirebase(session);
       this.updateBadge();
+    }
+  }
+
+  async handleRemoteLogout(message) {
+    console.log("SessionSync: Handling REMOTE_LOGOUT", message);
+    const { hostname } = message;
+    if (this.sessions.has(hostname)) {
+      const session = this.sessions.get(hostname);
+      session.active = false;
+      session.lastLogout = Date.now();
+      this.sessions.set(hostname, session);
+      await this.saveSessions();
+      this.syncWithFirebase(session);
+      this.updateBadge();
+      await this.clearSiteCookies(hostname);
+      await this.reloadSiteTabs(hostname);
+    }
+  }
+
+  async clearSiteCookies(hostname) {
+    try {
+      const cookies = await chrome.cookies.getAll({ domain: hostname });
+      for (const cookie of cookies) {
+        await chrome.cookies.remove({
+          url: `http${cookie.secure ? 's' : ''}://${cookie.domain}${cookie.path}`,
+          name: cookie.name
+        });
+      }
+      console.log(`SessionSync: Cleared ${cookies.length} cookies for ${hostname}`);
+    } catch (error) {
+      console.error('SessionSync: Error clearing cookies:', error);
+    }
+  }
+
+  async reloadSiteTabs(hostname) {
+    try {
+      const tabs = await chrome.tabs.query({ url: `*://${hostname}/*` });
+      for (const tab of tabs) {
+        chrome.tabs.reload(tab.id);
+      }
+    } catch (error) {
+      console.error('SessionSync: Error reloading tabs:', error);
     }
   }
 
