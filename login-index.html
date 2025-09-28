@@ -1,129 +1,47 @@
-// Import Firebase config + services
-import { app } from "./firebase-config.js";
-import { 
-  getAuth, 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
-  signInWithPopup, 
-  GoogleAuthProvider 
-} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
-import { getFirestore, setDoc, doc } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Log In — TrackMyLogin</title>
+  <link rel="stylesheet" href="login-style.css" />
+</head>
+<body>
+  <div class="page">
+    <div class="card">
+      <h1 class="card-title">Log In</h1>
+      <p class="card-sub">Welcome back, you've been missed!</p>
 
-const auth = getAuth(app);
-const db = getFirestore(app);
+      <button class="btn btn-google" id="googleLoginBtn" aria-label="Sign in with Google">
+        <span class="g-icon">G</span>
+        <span>Log in with Google</span>
+      </button>
 
-// --------------------
-// Signup form handler (Email/Password)
-// --------------------
-const signupForm = document.getElementById("signupForm");
-if (signupForm) {
-  signupForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const name = document.getElementById("signup-username").value.trim();
-    const email = document.getElementById("signup-email").value.trim();
-    const password = document.getElementById("signup-password").value;
+      <div class="divider"><span>OR</span></div>
 
-    if (!name || !email || !password) {
-      alert("Please fill all fields.");
-      return;
-    }
+      <form id="loginForm" class="form" autocomplete="on" novalidate>
+        <label class="sr-only" for="login-username">Email or username</label>
+        <input id="login-username" name="username" type="text" placeholder="Email or Username" required>
 
-    try {
-      const userCred = await createUserWithEmailAndPassword(auth, email, password);
-      
-      // Save additional profile info to Firestore
-      await setDoc(doc(db, "users", userCred.user.uid), {
-        name: name,
-        email: email,
-        createdAt: new Date()
-      });
+        <label class="sr-only" for="login-password">Password</label>
+        <input id="login-password" name="password" type="password" placeholder="Password" required>
 
-      console.log("User signed up:", userCred.user.uid);
-      alert(`Welcome ${name}!`);
-      window.location.href = "dashboard.html";
-    } catch (err) {
-      console.error("Signup error:", err);
-      alert(err.message);
-    }
-  });
-}
+        <div class="form-row">
+          <label class="remember">
+            <input type="checkbox" id="remember" />
+            <span>Remember me</span>
+          </label>
+          <a class="link" href="#">Forgot Password?</a>
+        </div>
 
-// --------------------
-// Login form handler (Email/Password)
-// --------------------
-const loginForm = document.getElementById("loginForm");
-if (loginForm) {
-  loginForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const email = document.getElementById("login-username").value.trim();
-    const password = document.getElementById("login-password").value;
+        <button type="submit" class="btn btn-primary">Log In</button>
+      </form>
 
-    if (!email || !password) {
-      alert("Please enter email and password.");
-      return;
-    }
+      <p class="muted">Don't have an account yet? <a href="signup.html" class="link">Sign Up</a></p>
+    </div>
+  </div>
 
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-      console.log("User logged in:", email);
-      window.location.href = "dashboard.html";
-    } catch (err) {
-      console.error("Login error:", err);
-      alert(err.message);
-    }
-  });
-}
+  <script type="module" src="login-app.js"></script>
 
-// --------------------
-// Google login button
-// --------------------
-const googleLoginBtn = document.getElementById("googleLoginBtn");
-if (googleLoginBtn) {
-  googleLoginBtn.addEventListener("click", async () => {
-    const provider = new GoogleAuthProvider();
-    try {
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-      console.log("Google login:", user);
-
-      // Save user info in Firestore if not exists
-      await setDoc(doc(db, "users", user.uid), {
-        name: user.displayName || "",
-        email: user.email,
-        createdAt: new Date()
-      }, { merge: true }); // merge:true avoids overwriting existing data
-
-      window.location.href = "dashboard.html";
-    } catch (err) {
-      console.error("Google login error:", err);
-      alert(err.message);
-    }
-  });
-}
-
-// --------------------
-// Google signup button
-// --------------------
-const googleSignupBtn = document.getElementById("googleSignupBtn");
-if (googleSignupBtn) {
-  googleSignupBtn.addEventListener("click", async () => {
-    const provider = new GoogleAuthProvider();
-    try {
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-      console.log("Google signup:", user);
-
-      // Save user info in Firestore if not exists
-      await setDoc(doc(db, "users", user.uid), {
-        name: user.displayName || "",
-        email: user.email,
-        createdAt: new Date()
-      }, { merge: true });
-
-      window.location.href = "dashboard.html";
-    } catch (err) {
-      console.error("Google signup error:", err);
-      alert(err.message);
-    }
-  });
-}
+</body>
+</html>
