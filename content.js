@@ -43,20 +43,27 @@ function extractEmail() {
     console.error('Error accessing cookies:', e);
   }
 
-  const extractedEmail = emailFromInput || emailFromStorage || emailFromCookie || (emailsInText && emailsInText[0]) || null;
   console.log('Email extraction results:', {
     input: emailFromInput,
     text: emailsInText && emailsInText[0],
     storage: emailFromStorage,
-    cookie: emailFromCookie,
-    final: extractedEmail
+    cookie: emailFromCookie
   });
 
-  return extractedEmail;
+  return emailFromInput || emailFromStorage || emailFromCookie || (emailsInText && emailsInText[0]) || null;
 }
 
-// Send login event with a unique identifier to track
+// Track state to prevent duplicate spams
+let isLoggedIn = false;
+let debounceTimer = null;
+
+// Send login event with a unique identifier
 function sendLoginEvent(eventId = Date.now()) {
+  if (isLoggedIn) {
+    console.log(`SessionSync: Login already sent for ${window.location.hostname}, ignoring (Event ID: ${eventId})`);
+    return;
+  }
+
   const email = extractEmail();
   console.log(`SessionSync: Sending LOGIN event (ID: ${eventId})`, {
     hostname: window.location.hostname,
@@ -66,16 +73,23 @@ function sendLoginEvent(eventId = Date.now()) {
 
   chrome.runtime.sendMessage({
     type: 'LOGIN',
-    eventId: eventId, // Unique ID to trace the message
+    eventId: eventId,
     hostname: window.location.hostname,
     url: window.location.href,
     email: email,
     timestamp: Date.now()
   });
+
+  isLoggedIn = true; // Set flag after sending
 }
 
 // Send logout event
 function sendLogoutEvent() {
+  if (!isLoggedIn) {
+    console.log(`SessionSync: No active login to logout for ${window.location.hostname}`);
+    return;
+  }
+
   console.log("SessionSync: Sending LOGOUT event", {
     hostname: window.location.hostname,
     url: window.location.href
@@ -87,19 +101,25 @@ function sendLogoutEvent() {
     url: window.location.href,
     timestamp: Date.now()
   });
+
+  isLoggedIn = false; // Reset flag after sending
 }
 
-// Use a delay on load to ensure dynamic content is ready
+// Use a single delay on load to ensure dynamic content is ready
 window.addEventListener('load', () => {
   const eventId = Date.now();
-  setTimeout(() => sendLoginEvent(eventId), 1000);
-  setTimeout(() => sendLoginEvent(eventId), 3000); // Second check
+  setTimeout(() => sendLoginEvent(eventId), 1500); // Single trigger with delay
 });
 
-// Mutation observer for dynamic DOM changes
+// Mutation observer with debounce to prevent excessive calls
 const observer = new MutationObserver(() => {
-  const eventId = Date.now();
-  sendLoginEvent(eventId);
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    const eventId = Date.now();
+    if (!isLoggedIn) {
+      sendLoginEvent(eventId); // Only send if not already logged in
+    }
+  }, 2000); // Debounce to 2 seconds
 });
 observer.observe(document.body, { childList: true, subtree: true });
 
