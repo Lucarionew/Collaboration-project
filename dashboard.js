@@ -1,6 +1,8 @@
 // Import Firebase
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
-import { getFirestore, collection, getDocs, query, orderBy, limit, where, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
+import {
+    getFirestore, collection, getDocs, query, orderBy, limit, doc, updateDoc, getDoc, setDoc
+} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
 import { getAuth, onAuthStateChanged, updateProfile } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-storage.js";
 
@@ -21,86 +23,94 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 const storage = getStorage(app);
 
-// Store activities and additional emails
 let activities = [];
-let additionalEmails = [];
+let userData = {};
+let emails = [];
+const profileName = document.getElementById('profileName');
+const profileEmail = document.getElementById('profileEmail');
+const headerProfilePic = document.getElementById('headerProfilePic');
+const DEFAULT_AVATAR = 'https://via.placeholder.com/45x45/21262d/8b949e?text=👤';
 
-// Elements
-const profileName = document.querySelector('.profile-info h2');
-const profileEmail = document.querySelector('.profile-info p');
-const userAvatar = document.getElementById('userAvatar');
-const editProfileBtn = document.getElementById('editProfileBtn');
-const profileModal = document.getElementById('profileModal');
-const closeModal = profileModal.querySelector('.close');
-const usernameInput = document.getElementById('username');
-const profilePicInput = document.getElementById('profilePic');
-const previewAvatar = document.getElementById('previewAvatar');
-const primaryEmail = document.getElementById('primaryEmail');
-const additionalEmailsList = document.getElementById('additionalEmailsList');
-const newEmailInput = document.getElementById('newEmail');
-const addEmailBtn = document.getElementById('addEmailBtn');
-const profileForm = document.getElementById('profileForm');
-let tempAdditionalEmails = [];
-
-// Initialize dashboard after auth
+// Auth state check
 onAuthStateChanged(auth, async (user) => {
     if (user) {
-        // Set profile name, email & avatar
-        profileName.textContent = user.displayName || user.email.split('@')[0];
         profileEmail.textContent = user.email;
-        userAvatar.src = user.photoURL || 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png';
-
-        // Load user data and activities
-        await loadUserData(user);
+        await fetchUserProfile(user);
         fetchActivitiesFromFirestore();
     } else {
-        // Redirect if not logged in
-        window.location.href = "login.html";
+        window.location.href = "login-index.html";
     }
 });
 
-// Load user data from Firestore
-async function loadUserData(user) {
+// Fetch user profile from Firestore
+async function fetchUserProfile(user) {
+    const userRef = doc(db, 'users', user.uid);
     try {
-        const userDocRef = doc(db, "users", user.uid);
-        const userDoc = await getDoc(userDocRef);
-        if (userDoc.exists()) {
-            additionalEmails = userDoc.data().additionalEmails || [];
+        const snap = await getDoc(userRef);
+        if (snap.exists()) {
+            userData = snap.data();
         } else {
-            await setDoc(userDocRef, { additionalEmails: [] });
-            additionalEmails = [];
+            userData = {
+                name: user.displayName || user.email,
+                photoURL: user.photoURL || DEFAULT_AVATAR,
+                emails: [user.email]
+            };
+            await setDoc(userRef, userData);
         }
-        tempAdditionalEmails = [...additionalEmails];
-        renderAdditionalEmails();
+        emails = userData.emails || [user.email];
+        headerProfilePic.src = userData.photoURL || DEFAULT_AVATAR;
+        profileName.textContent = userData.name;
+        populateModal();
+        renderEmails();
     } catch (error) {
-        console.error("Error loading user data:", error);
-        showNotification('Failed to load user data', 'warning');
+        console.error("Error fetching user profile:", error);
+        showNotification("Failed to load profile data", "warning");
     }
 }
 
-// Fetch activities from Firestore
+// Populate modal with current data
+function populateModal() {
+    document.getElementById('nameInput').value = userData.name || '';
+    document.getElementById('currentPic').src = userData.photoURL || DEFAULT_AVATAR;
+}
+
+// Render emails in modal
+function renderEmails() {
+    const emailsList = document.getElementById('emailsList');
+    emailsList.innerHTML = '';
+    emails.forEach((email, i) => {
+        const div = document.createElement('div');
+        div.className = 'email-pill';
+        div.innerHTML = `
+            <span>${email}</span>
+            <button type="button" class="remove-email-btn">×</button>
+        `;
+        const removeBtn = div.querySelector('.remove-email-btn');
+        removeBtn.addEventListener('click', () => {
+            emails.splice(i, 1);
+            renderEmails();
+        });
+        emailsList.appendChild(div);
+    });
+}
+
+// Fetch session data
 async function fetchActivitiesFromFirestore() {
     try {
-        const user = auth.currentUser;
-        const allEmails = [user.email, ...additionalEmails];
-        if (allEmails.length === 0) {
-            console.warn("No emails available for fetching activities");
-            return;
-        }
-
         const sessionsRef = collection(db, "sessions");
-        const q = query(sessionsRef, where("email", "in", allEmails), orderBy("timestamp", "desc"), limit(50));
+        const q = query(sessionsRef, orderBy("timestamp", "desc"), limit(50));
         const snapshot = await getDocs(q);
 
-        activities = snapshot.docs.map(doc => {
-            const data = doc.data();
+        activities = snapshot.docs.map(docSnap => {
+            const data = docSnap.data();
             return {
-                id: doc.id,
-                website: data.site || 'Unknown',
-                device: data.device || 'Unknown',
-                email: data.email || user.email,
-                time: new Date(data.timestamp?.seconds * 1000 || data.lastLogin || Date.now()).toISOString(),
-                status: data.active ? "safe" : "unsafe"
+                id: docSnap.id,
+                website: data.site,
+                device: data.device,
+                email: data.email,
+                time: new Date(data.timestamp?.seconds * 1000 || data.lastLogin).toISOString(),
+                status: data.active ? "active" : "inactive",
+                deviceStatus: data.deviceStatus || "Untrusted"
             };
         });
 
@@ -108,11 +118,10 @@ async function fetchActivitiesFromFirestore() {
         updateStats();
     } catch (error) {
         console.error("Error fetching sessions:", error);
-        showNotification('Failed to fetch activities', 'warning');
     }
 }
 
-// Render activities table
+// Render table rows
 function renderActivities() {
     const tableBody = document.getElementById('activityTableBody');
     tableBody.innerHTML = '';
@@ -123,7 +132,7 @@ function renderActivities() {
     });
 }
 
-// Create a table row for an activity
+// Create row
 function createActivityRow(activity) {
     const row = document.createElement('tr');
     row.innerHTML = `
@@ -133,227 +142,150 @@ function createActivityRow(activity) {
         <td><div class="time-info">${formatTime(activity.time)}</div></td>
         <td>
             <span class="status-badge status-${activity.status}">
-                ${activity.status}
+                ${activity.status.charAt(0).toUpperCase() + activity.status.slice(1)}
             </span>
         </td>
         <td>
-            <div class="action-buttons">
-                ${activity.status === 'pending' ? `
-                    <button class="action-btn btn-safe" onclick="markAsSafe('${activity.id}')">Safe</button>
-                    <button class="action-btn btn-unsafe" onclick="markAsUnsafe('${activity.id}')">Unsafe</button>
-                ` : ''}
-                <button class="action-btn btn-logout" onclick="forceLogout('${activity.id}')">Logout</button>
-            </div>
+            <select class="device-status-dropdown" data-id="${activity.id}">
+                <option value="Trusted" ${activity.deviceStatus === "Trusted" ? "selected" : ""}>Trusted</option>
+                <option value="Untrusted" ${activity.deviceStatus === "Untrusted" ? "selected" : ""}>Untrusted</option>
+            </select>
         </td>
     `;
     return row;
 }
 
-// Format time
-function formatTime(timeString) {
-    const date = new Date(timeString);
-    const now = new Date();
-    const diffInHours = Math.floor((now - date) / (1000 * 60 * 60));
+// Handle dropdown change
+document.addEventListener("change", async (event) => {
+    if (event.target.classList.contains("device-status-dropdown")) {
+        const id = event.target.getAttribute("data-id");
+        const newStatus = event.target.value;
+        await updateDeviceStatus(id, newStatus);
+    }
+});
 
-    if (diffInHours < 1) {
-        const diffInMinutes = Math.floor((now - date) / (1000 * 60));
-        return `${diffInMinutes} min ago`;
-    } else if (diffInHours < 24) {
-        return `${diffInHours}h ago`;
-    } else {
-        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+// Update Firestore when device status changes
+async function updateDeviceStatus(id, newStatus) {
+    try {
+        const ref = doc(db, "sessions", id);
+        await updateDoc(ref, { deviceStatus: newStatus });
+
+        const activity = activities.find(a => a.id === id);
+        if (activity) activity.deviceStatus = newStatus;
+
+        showNotification(`Device marked as ${newStatus}`, "success");
+    } catch (error) {
+        console.error("Error updating device status:", error);
+        showNotification("Failed to update device status", "warning");
     }
 }
 
-// Mark as safe
-window.markAsSafe = function(id) {
-    const activity = activities.find(a => a.id === id);
-    if (activity) {
-        activity.status = 'safe';
-        renderActivities();
-        updateStats();
-        showNotification('Activity marked as safe', 'success');
-    }
-};
-
-// Mark as unsafe
-window.markAsUnsafe = function(id) {
-    const activity = activities.find(a => a.id === id);
-    if (activity) {
-        activity.status = 'unsafe';
-        renderActivities();
-        updateStats();
-        showNotification('Activity marked as unsafe', 'warning');
-    }
-};
-
-// Force logout
-window.forceLogout = function(id) {
-    const activity = activities.find(a => a.id === id);
-    if (activity) {
-        showNotification(`Force logout initiated for ${activity.website}`, 'info');
-        console.log(`Force logout for activity ${id} on ${activity.website}`);
-    }
-};
+// Format timestamp
+function formatTime(isoString) {
+    const date = new Date(isoString);
+    return date.toLocaleString();
+}
 
 // Update stats
 function updateStats() {
-    const totalActivities = activities.length;
-    const safeActivities = activities.filter(a => a.status === 'safe').length;
-    const pendingActivities = activities.filter(a => a.status === 'pending').length;
-    const unsafeActivities = activities.filter(a => a.status === 'unsafe').length;
+    const total = activities.length;
+    const active = activities.filter(a => a.status === "active").length;
+    const inactive = total - active;
 
-    document.getElementById('totalActivities').textContent = totalActivities;
-    document.getElementById('safeActivities').textContent = safeActivities;
-    document.getElementById('pendingActivities').textContent = pendingActivities;
-    document.getElementById('unsafeActivities').textContent = unsafeActivities;
+    document.getElementById('totalLogins').textContent = total;
+    document.getElementById('activeSessions').textContent = active;
+    document.getElementById('inactiveSessions').textContent = inactive;
 }
 
-// Refresh button
-window.refreshActivities = function() {
-    const refreshBtn = document.querySelector('.refresh-btn');
-    refreshBtn.style.opacity = '0.7';
-    refreshBtn.style.pointerEvents = 'none';
-    fetchActivitiesFromFirestore().then(() => {
-        showNotification('Activities refreshed', 'success');
-        refreshBtn.style.opacity = '1';
-        refreshBtn.style.pointerEvents = 'auto';
-    });
-};
-
-// Show notification
-function showNotification(message, type = 'info') {
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-    notification.innerHTML = `
-        <div class="notification-content">
-            <span>${message}</span>
-            <button class="notification-close" onclick="this.parentElement.parentElement.remove()">×</button>
-        </div>
-    `;
-    if (!document.querySelector('#notification-styles')) {
-        const style = document.createElement('style');
-        style.id = 'notification-styles';
-        style.textContent = `
-            .notification { position: fixed; top: 20px; right: 20px; z-index: 1000; min-width: 300px; background: white; border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); border-left: 4px solid #667eea; animation: slideIn 0.3s ease-out;}
-            .notification-success { border-left-color: #10b981; }
-            .notification-warning { border-left-color: #f59e0b; }
-            .notification-info { border-left-color: #3b82f6; }
-            .notification-content { padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; }
-            .notification-close { background: none; border: none; font-size: 20px; cursor: pointer; color: #666; padding: 0; margin-left: 15px; }
-            @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-        `;
-        document.head.appendChild(style);
-    }
-    document.body.appendChild(notification);
+// Notification popup
+function showNotification(message, type = "info") {
+    const notification = document.getElementById("notification");
+    notification.textContent = message;
+    notification.className = `notification show ${type}`;
     setTimeout(() => {
-        if (notification.parentElement) notification.remove();
-    }, 3000);
+        notification.className = "notification";
+    }, 2500);
 }
 
-// Edit Profile Modal Handlers
+// Profile Modal Logic
+const modal = document.getElementById('profileModal');
+const editProfileBtn = document.getElementById('editProfileBtn');
+const closeBtn = document.querySelector('.close');
+const addEmailBtn = document.getElementById('addEmailBtn');
+const profileForm = document.getElementById('profileForm');
+const newEmailInput = document.getElementById('newEmailInput');
+
 editProfileBtn.addEventListener('click', () => {
-    const user = auth.currentUser;
-    if (user) {
-        usernameInput.value = user.displayName || user.email.split('@')[0];
-        primaryEmail.textContent = user.email;
-        tempAdditionalEmails = [...additionalEmails];
-        renderAdditionalEmails();
-        previewAvatar.src = user.photoURL || 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png';
-        previewAvatar.style.display = user.photoURL ? 'block' : 'none';
-        profileModal.style.display = 'block';
-    }
+    populateModal();
+    renderEmails();
+    modal.style.display = 'block';
 });
 
-closeModal.addEventListener('click', () => {
-    profileModal.style.display = 'none';
+closeBtn.addEventListener('click', () => {
+    modal.style.display = 'none';
 });
 
 window.addEventListener('click', (event) => {
-    if (event.target === profileModal) {
-        profileModal.style.display = 'none';
+    if (event.target === modal) {
+        modal.style.display = 'none';
     }
 });
 
 addEmailBtn.addEventListener('click', () => {
     const email = newEmailInput.value.trim();
-    const user = auth.currentUser;
-    if (email && isValidEmail(email) && !tempAdditionalEmails.includes(email) && email !== user.email) {
-        tempAdditionalEmails.push(email);
-        renderAdditionalEmails();
+    if (email && !emails.includes(email)) {
+        emails.push(email);
+        renderEmails();
         newEmailInput.value = '';
-        showNotification('Email added to list', 'success');
-    } else {
-        showNotification('Invalid, duplicate, or primary email', 'warning');
-    }
-});
-
-function renderAdditionalEmails() {
-    additionalEmailsList.innerHTML = '';
-    tempAdditionalEmails.forEach(email => {
-        const div = document.createElement('div');
-        div.textContent = email;
-        const removeBtn = document.createElement('button');
-        removeBtn.textContent = 'Remove';
-        removeBtn.addEventListener('click', () => {
-            tempAdditionalEmails = tempAdditionalEmails.filter(e => e !== email);
-            renderAdditionalEmails();
-            showNotification('Email removed from list', 'info');
-        });
-        div.appendChild(removeBtn);
-        additionalEmailsList.appendChild(div);
-    });
-}
-
-profilePicInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (file) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            previewAvatar.src = e.target.result;
-            previewAvatar.style.display = 'block';
-        };
-        reader.readAsDataURL(file);
     }
 });
 
 profileForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const user = auth.currentUser;
-    const newName = usernameInput.value.trim();
-    let newPhotoURL = user.photoURL;
-    const file = profilePicInput.files[0];
+    const name = document.getElementById('nameInput').value.trim() || userData.name;
+    let photoURL = userData.photoURL;
+    const file = document.getElementById('picInput').files[0];
+
+    if (file) {
+        try {
+            console.log("Starting upload for file:", file.name);
+            const storageRef = ref(storage, `profile_pics/${auth.currentUser.uid}`);
+            const uploadTask = await uploadBytes(storageRef, file);
+            photoURL = await getDownloadURL(uploadTask.ref);
+            console.log("Upload successful, new URL:", photoURL);
+        } catch (error) {
+            console.error("Upload error details:", error);
+            if (error.code === 'storage/cors-error') {
+                showNotification("Upload failed: CORS issue. Configure Firebase Storage CORS for localhost (see docs).", "warning");
+            } else if (error.code === 'storage/unauthorized') {
+                showNotification("Upload failed: Check Firebase Storage rules and auth.", "warning");
+            } else {
+                showNotification(`Upload failed: ${error.message}`, "warning");
+            }
+            // Fallback to default if upload fails
+            photoURL = DEFAULT_AVATAR;
+        }
+    } else {
+        // No file selected, use default
+        photoURL = DEFAULT_AVATAR;
+    }
 
     try {
-        if (file) {
-            const storageRef = ref(storage, `profile_pics/${user.uid}`);
-            await uploadBytes(storageRef, file);
-            newPhotoURL = await getDownloadURL(storageRef);
-        }
-
-        await updateProfile(user, { displayName: newName, photoURL: newPhotoURL });
-
-        const userDocRef = doc(db, "users", user.uid);
-        await setDoc(userDocRef, { additionalEmails: tempAdditionalEmails }, { merge: true });
-
-        additionalEmails = [...tempAdditionalEmails];
-
-        // Update UI
-        profileName.textContent = newName || user.email.split('@')[0];
-        profileEmail.textContent = user.email;
-        userAvatar.src = newPhotoURL || 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png';
-
-        profileModal.style.display = 'none';
-        showNotification('Profile updated successfully', 'success');
-
-        // Refresh activities to reflect updated email list
-        fetchActivitiesFromFirestore();
+        const userRef = doc(db, 'users', auth.currentUser.uid);
+        await updateDoc(userRef, {
+            name,
+            photoURL,
+            emails
+        });
+        await updateProfile(auth.currentUser, { displayName: name, photoURL });
+        userData.name = name;
+        userData.photoURL = photoURL;
+        headerProfilePic.src = photoURL;
+        document.getElementById('currentPic').src = photoURL;
+        showNotification("Profile updated successfully", "success");
+        modal.style.display = 'none';
     } catch (error) {
-        console.error("Error updating profile:", error);
-        showNotification('Failed to update profile', 'warning');
+        console.error("Profile update error:", error);
+        showNotification(`Failed to update profile: ${error.message}`, "warning");
     }
 });
-
-function isValidEmail(email) {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
