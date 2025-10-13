@@ -53,20 +53,25 @@ function extractEmail() {
   return emailFromInput || emailFromStorage || emailFromCookie || (emailsInText && emailsInText[0]) || null;
 }
 
-// Track state to prevent duplicate spams
+// Prevent duplicate entries
 let isLoggedIn = false;
 let debounceTimer = null;
 
-// Send login event with a unique identifier
+// Use sessionStorage to remember visited sites in this browser session
+const hostname = window.location.hostname;
+const visitedKey = `sessionSync_logged_${hostname}`;
+const alreadyLogged = sessionStorage.getItem(visitedKey);
+
+// Send login event
 function sendLoginEvent(eventId = Date.now()) {
-  if (isLoggedIn) {
-    console.log(`SessionSync: Login already sent for ${window.location.hostname}, ignoring (Event ID: ${eventId})`);
+  if (isLoggedIn || alreadyLogged) {
+    console.log(`SessionSync: Login already recorded for ${hostname}, skipping (Event ID: ${eventId})`);
     return;
   }
 
   const email = extractEmail();
   console.log(`SessionSync: Sending LOGIN event (ID: ${eventId})`, {
-    hostname: window.location.hostname,
+    hostname,
     url: window.location.href,
     email: email
   });
@@ -74,57 +79,59 @@ function sendLoginEvent(eventId = Date.now()) {
   chrome.runtime.sendMessage({
     type: 'LOGIN',
     eventId: eventId,
-    hostname: window.location.hostname,
+    hostname,
     url: window.location.href,
     email: email,
     timestamp: Date.now()
   });
 
-  isLoggedIn = true; // Set flag after sending
+  isLoggedIn = true;
+  sessionStorage.setItem(visitedKey, 'true'); // Mark this site as logged for this session
 }
 
 // Send logout event
 function sendLogoutEvent() {
   if (!isLoggedIn) {
-    console.log(`SessionSync: No active login to logout for ${window.location.hostname}`);
+    console.log(`SessionSync: No active login to logout for ${hostname}`);
     return;
   }
 
   console.log("SessionSync: Sending LOGOUT event", {
-    hostname: window.location.hostname,
+    hostname,
     url: window.location.href
   });
 
   chrome.runtime.sendMessage({
     type: 'LOGOUT',
-    hostname: window.location.hostname,
+    hostname,
     url: window.location.href,
     timestamp: Date.now()
   });
 
-  isLoggedIn = false; // Reset flag after sending
+  isLoggedIn = false;
+  sessionStorage.removeItem(visitedKey);
 }
 
-// Use a single delay on load to ensure dynamic content is ready
+// Wait for page load to ensure content is ready
 window.addEventListener('load', () => {
   const eventId = Date.now();
-  setTimeout(() => sendLoginEvent(eventId), 1500); // Single trigger with delay
+  setTimeout(() => sendLoginEvent(eventId), 1500);
 });
 
-// Mutation observer with debounce to prevent excessive calls
+// Observe DOM changes (for SPAs), but don’t resend if already logged
 const observer = new MutationObserver(() => {
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
     const eventId = Date.now();
-    if (!isLoggedIn) {
-      sendLoginEvent(eventId); // Only send if not already logged in
+    if (!isLoggedIn && !sessionStorage.getItem(visitedKey)) {
+      sendLoginEvent(eventId);
     }
-  }, 2000); // Debounce to 2 seconds
+  }, 2000);
 });
 observer.observe(document.body, { childList: true, subtree: true });
 
 // Prevent multiple initializations
 if (typeof window.SessionDetector === 'undefined') {
   window.SessionDetector = true;
-  console.log('SessionSync: Content script initialized for', window.location.hostname);
+  console.log('SessionSync: Content script initialized for', hostname);
 }
