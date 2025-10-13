@@ -3,107 +3,90 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login Activity Monitor</title>
+    <title>SessionSync Dashboard</title>
     <link rel="stylesheet" href="dashboard.css">
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
-        <header class="header">
-            <h1>Login Activity Monitor</h1>
-            <p>Secure your digital presence by monitoring login activities</p>
-        </header>
+    <div class="dashboard-container">
+        <aside class="sidebar">
+            <h2>SessionSync</h2>
+            <ul>
+                <li><a href="dashboard.html" class="active">Dashboard</a></li>
+                <li><a href="login-index.html">Logout</a></li>
+            </ul>
+        </aside>
 
-        <!-- User Profile Section -->
-        <div class="profile-section">
-            <div class="profile-card">
-                <div class="profile-avatar">
-                    <img src="https://cdn-icons-png.flaticon.com/512/3135/3135715.png" alt="User Avatar" id="userAvatar">
-                </div>
+        <main class="main-content">
+            <header>
                 <div class="profile-info">
-                    <h2 id="userName"></h2>
-                    <button id="editProfileBtn" class="edit-btn">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                        </svg>
-                    </button>
-                    <p id="userEmail"></p>
-                    <div class="profile-stats">
-                        <div class="stat">
-                            <span class="stat-number" id="totalActivities">0</span>
-                            <span class="stat-label">Total Activities</span>
-                        </div>
-                        <div class="stat">
-                            <span class="stat-number safe" id="safeActivities">0</span>
-                            <span class="stat-label">Safe</span>
-                        </div>
-                        <div class="stat">
-                            <span class="stat-number pending" id="pendingActivities">0</span>
-                            <span class="stat-label">Pending</span>
-                        </div>
-                        <div class="stat">
-                            <span class="stat-number unsafe" id="unsafeActivities">0</span>
-                            <span class="stat-label">Unsafe</span>
-                        </div>
+                    <img id="headerProfilePic" src="images/profile.png" alt="Profile">
+                    <div>
+                        <h2 id="profileName">Loading...</h2>
+                        <p id="profileEmail">Loading...</p>
                     </div>
                 </div>
-            </div>
-        </div>
+                <button id="editProfileBtn" class="edit-btn">✏️</button>
+            </header>
 
-        <!-- Activity Table Section -->
-        <div class="table-section">
-            <div class="table-header">
-                <h3>Recent Login Activities</h3>
-                <button class="refresh-btn" onclick="refreshActivities()">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
-                        <path d="M21 3v5h-5"/>
-                        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
-                        <path d="M3 21v-5h5"/>
-                    </svg>
-                    Refresh
-                </button>
-            </div>
-            
-            <div class="table-container">
-                <table class="activity-table" id="activityTable">
-                    <thead>
-                        <tr>
-                            <th>Website/Service</th>
-                            <th>Device</th>
-                            <th>Email</th>
-                            <th>Time</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="activityTableBody">
-                        <!-- Table rows will be populated by JavaScript -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
+            <section class="stats">
+                <div class="stat-box">
+                    <h3>Total Logins</h3>
+                    <p id="totalLogins">0</p>
+                </div>
+                <div class="stat-box">
+                    <h3>Active Sessions</h3>
+                    <p id="activeSessions">0</p>
+                </div>
+                <div class="stat-box">
+                    <h3>Inactive Sessions</h3>
+                    <p id="inactiveSessions">0</p>
+                </div>
+            </section>
+
+            <section class="activity">
+                <h2>Recent Activity</h2>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Website/Service</th>
+                                <th>Device</th>
+                                <th>Email</th>
+                                <th>Time</th>
+                                <th>Status</th>
+                                <th>Device Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="activityTableBody">
+                            <!-- Rows will be injected dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
     </div>
 
-    <!-- Profile Edit Modal -->
+    <div id="notification" class="notification"></div>
+
+    <!-- Profile Modal -->
     <div id="profileModal" class="modal">
         <div class="modal-content">
             <span class="close">&times;</span>
             <h2>Edit Profile</h2>
             <form id="profileForm">
-                <label for="username">Username:</label>
-                <input type="text" id="username" required>
-                <label for="profilePic">Profile Picture:</label>
-                <input type="file" id="profilePic" accept="image/*">
-                <img id="previewAvatar" src="" alt="Preview" style="width:100px;height:100px;border-radius:50%;display:none;margin-top:10px;">
-                <label>Primary Email:</label>
-                <p id="primaryEmail"></p>
-                <label>Additional Emails:</label>
-                <div id="additionalEmailsList"></div>
-                <input type="email" id="newEmail" placeholder="Add new email">
-                <button type="button" id="addEmailBtn">Add</button>
-                <button type="submit" id="saveProfileBtn">Save</button>
+                <div class="profile-pic-upload">
+                    <img id="currentPic" src="images/profile.png" alt="Current Profile Pic">
+                    <input type="file" id="picInput" accept="image/*">
+                </div>
+                <label for="nameInput">Username:</label>
+                <input type="text" id="nameInput" placeholder="Enter username">
+                <label for="emailsList">Emails:</label>
+                <div id="emailsList"></div>
+                <div class="add-email">
+                    <input type="email" id="newEmailInput" placeholder="Add new email">
+                    <button type="button" id="addEmailBtn">Add</button>
+                </div>
+                <button type="submit">Save Changes</button>
             </form>
         </div>
     </div>
